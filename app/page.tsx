@@ -18,7 +18,7 @@ const QUERIES = [
 ];
 
 /* ─── Custom tooltip ────────────────────────────────────────────────────── */
-const CustomTip = ({ active, payload, label }) => {
+const CustomTip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div style={{
