@@ -34,7 +34,7 @@ const CustomTip = ({ active, payload, label }: any) => {
       <div style={{ color: "#94a3b8", marginBottom: 6, fontFamily: "monospace", letterSpacing: "0.05em" }}>
         {label}
       </div>
-      {payload.map((p, i) => (
+      {payload.map((p: any, i: number) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color, display: "inline-block" }} />
           <span style={{ color: "#64748b" }}>{p.name}:</span>
