@@ -46,7 +46,7 @@ const CustomTip = ({ active, payload, label }: any) => {
 };
 
 /* ─── KPI Card ──────────────────────────────────────────────────────────── */
-const KpiCard = ({ label, value, sub, accent, delay }) => (
+const KpiCard = ({ label, value, sub, accent, delay }: any) => (
   <div style={{
     background: "rgba(255,255,255,0.025)",
     border: "1px solid rgba(255,255,255,0.06)",
