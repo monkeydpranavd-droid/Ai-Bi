@@ -1,4 +1,4 @@
-import { generateInsight } from "@/lib/gemini"
+import { generateInsight } from "@/lib/ai"
 
 export async function POST(req) {
 

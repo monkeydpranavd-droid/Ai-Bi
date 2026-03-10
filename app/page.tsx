@@ -99,9 +99,10 @@ export default function ConverSight() {
   const [inputVal, setInputVal] = useState("");
   const [insight, setInsight] = useState("");
 
-  // CSV Dataset Support (kept for future expansion — does NOT drive charts)
+  // CSV Dataset Support
   const [dataset, setDataset] = useState<any[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
+  const [filteredData, setFilteredData] = useState<any[]>([]);
 
   const [isTyping, setIsTyping] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -117,7 +118,7 @@ export default function ConverSight() {
     console.log("ACTIVE QUERY CHANGED:", activeQuery);
   }, [activeQuery]);
 
-  // CSV upload kept for future expansion — does not affect chart rendering
+  // ─── FIX 1: handleFileUpload moved OUT of handleSubmit ───────────────────
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -125,9 +126,9 @@ export default function ConverSight() {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      dynamicTyping: true,
+      dynamicTyping: true,   // ← converts "98.7" → 98.7, "1000" → 1000 automatically
       complete: (results: any) => {
-        console.log("CSV DATA (preview only):", results.data);
+        console.log("CSV DATA:", results.data);
         setDataset(results.data);
         if (results.data.length > 0) {
           setColumns(Object.keys(results.data[0]));
@@ -150,10 +151,73 @@ export default function ConverSight() {
   const handleSubmit = async () => {
     console.log("RUN BUTTON CLICKED");
 
+    // Clear previous filters on every new submission
+    setFilteredData([]);
+
     if (!inputVal.trim()) {
       console.log("EMPTY INPUT");
       return;
     }
+
+    // ─── Local filter engine (runs before API call) ───────────────────────
+    if (isCSV) {
+      const text = inputVal.toLowerCase();
+
+      // FILTER: ratio above X
+      if (text.includes("ratio above")) {
+        const value = parseFloat(text.split("above")[1]);
+        const filtered = dataset.filter((row: any) => Number(row.ratio) > value);
+        setFilteredData(filtered);
+        return;
+      }
+
+      // FILTER: repud above X
+      if (text.includes("repud above")) {
+        const value = parseFloat(text.split("above")[1]);
+        const filtered = dataset.filter((row: any) => Number(row.repud) > value);
+        setFilteredData(filtered);
+        return;
+      }
+
+      // FILTER: repud below X
+      if (text.includes("repud below") || text.includes("repudiation below")) {
+        const value = parseFloat(text.split("below")[1]);
+        const filtered = dataset.filter((row: any) => Number(row.repud) < value);
+        setFilteredData(filtered);
+        return;
+      }
+
+      // FILTER: only <insurer name>
+      if (text.includes("only")) {
+        const name = text.split("only")[1].trim();
+        const filtered = dataset.filter((row: any) =>
+          row.name.toLowerCase().includes(name)
+        );
+        setFilteredData(filtered);
+        return;
+      }
+
+      // FILTER: top N insurers (by ratio)
+      if (text.includes("top")) {
+        const match = text.match(/top\s+(\d+)/);
+        const n = match ? parseInt(match[1]) : 3;
+        const filtered = [...dataset]
+          .sort((a: any, b: any) => Number(b.ratio) - Number(a.ratio))
+          .slice(0, n);
+        setFilteredData(filtered);
+        return;
+      }
+
+      // FILTER: lowest settlement
+      if (text.includes("lowest settlement")) {
+        const filtered = [...dataset]
+          .sort((a: any, b: any) => Number(a.ratio) - Number(b.ratio))
+          .slice(0, 3);
+        setFilteredData(filtered);
+        return;
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     try {
       console.log("Sending prompt:", inputVal);
@@ -174,6 +238,7 @@ export default function ConverSight() {
         console.log("ACTIVE QUERY SET TO:", data.chart);
       }
 
+      // ─── FIX 2: insight render ────────────────────────────────────────────
       if (data?.insight) {
         setInsight(data.insight);
       }
@@ -195,6 +260,7 @@ export default function ConverSight() {
   const BAR_GRADIENT = ["#22d3ee", "#0ea5e9", "#6366f1", "#8b5cf6", "#a855f7"];
 
   // Settlement bar colors — green→red based on ratio
+  // +ratio coerces CSV strings ("98.7") to numbers correctly
   const settlementColor = (ratio: any) => {
     const r = +ratio;
     if (r >= 99) return "#10b981";
@@ -202,6 +268,11 @@ export default function ConverSight() {
     if (r >= 97.5) return "#f59e0b";
     return "#f43f5e";
   };
+
+  // ─── CSV-aware data flag ──────────────────────────────────────────────────
+  const isCSV = dataset.length > 0;
+  // activeData = filtered subset if filter active, else full CSV
+  const activeData = filteredData.length ? filteredData : dataset;
 
   return (
     <div style={{
@@ -212,6 +283,7 @@ export default function ConverSight() {
       position: "relative",
       overflow: "hidden",
     }}>
+      {/* ─── FIX 4: Properly wrapped <style> template literal ─────────────── */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&family=JetBrains+Mono:wght@400;600&display=swap');
         @keyframes fadeUp { from { opacity:0; transform:translateY(18px) } to { opacity:1; transform:translateY(0) } }
@@ -325,8 +397,7 @@ export default function ConverSight() {
             <KpiCard label="Worst Repud. Rate" value="4.11%" sub="Shriram Life FY22" accent={C.rose} delay={0.25} />
           </div>
 
-          {/* ── CSV UPLOAD (future expansion — does not affect charts) ── */}
-          {/* 
+          {/* ── CSV UPLOAD ── */}
           <div style={{ marginBottom: 20 }}>
             <input
               type="file"
@@ -340,7 +411,6 @@ export default function ConverSight() {
               </div>
             )}
           </div>
-          */}
 
           {/* ── SEARCH BAR ── */}
           <div style={{
@@ -382,7 +452,7 @@ export default function ConverSight() {
             </button>
           </div>
 
-          {/* ── AI Insight banner ── */}
+          {/* ─── FIX 5: AI Insight banner rendered when present ──────────── */}
           {insight && (
             <div style={{
               background: "rgba(34,211,238,0.06)",
@@ -420,26 +490,46 @@ export default function ConverSight() {
             ))}
           </div>
 
-          {/* ── CHARTS ── */}
+          {/* ── FILTER INDICATOR ── */}
+          {filteredData.length > 0 && (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              background: "rgba(34,211,238,0.06)",
+              border: "1px solid rgba(34,211,238,0.2)",
+              borderRadius: 10, padding: "8px 16px",
+              marginBottom: 16, fontSize: 12,
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              <span style={{ color: "#22d3ee" }}>
+                ⟨ Filter active → showing {filteredData.length} of {dataset.length} rows
+              </span>
+              <button
+                onClick={() => setFilteredData([])}
+                style={{
+                  background: "none", border: "1px solid rgba(244,63,94,0.3)",
+                  color: "#f43f5e", fontSize: 11, padding: "3px 10px",
+                  borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                ✕ Clear filter
+              </button>
+            </div>
+          )}
 
-          {/* ── Settlement ── */}
+          {/* ── CHARTS ── */}
           {activeQuery === "settlement" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(560px,1fr))", gap: 16 }}>
 
               <Panel title="Claim Settlement Ratio by Insurer · FY 2021-22" tag="BAR" delay={0}>
                 <ResponsiveContainer width="100%" height={320}>
-                  {/* Always reads from verified DATA.settlement2022 */}
-                  <BarChart
-                    data={DATA.settlement2022}
-                    layout="vertical"
-                    margin={{ left: 10, right: 20, top: 0, bottom: 0 }}
-                  >
+                  {/* Uses isCSV ? activeData : DATA.settlement2022 */}
+                  <BarChart data={isCSV ? activeData : DATA.settlement2022} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                     <XAxis type="number" domain={[94, 100]} tick={{ fontSize: 10, fill: "#334155", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTip />} />
                     <Bar dataKey="ratio" name="Settlement %" radius={[0, 4, 4, 0]} maxBarSize={14}>
-                      {DATA.settlement2022?.map((d: any, i: number) => (
+                      {(isCSV ? activeData : DATA.settlement2022)?.map((d: any, i: number) => (
                         <Cell key={i} fill={settlementColor(d.ratio)} opacity={0.85} />
                       ))}
                     </Bar>
@@ -458,21 +548,16 @@ export default function ConverSight() {
 
               <Panel title="Repudiation Rate by Insurer (Bottom 12) · FY 2021-22" tag="BAR" delay={0.1}>
                 <ResponsiveContainer width="100%" height={320}>
-                  {/* Always reads from verified DATA.repudiation */}
-                  <BarChart
-                    data={[...DATA.repudiation].reverse()}
-                    layout="vertical"
-                    margin={{ left: 10, right: 20, top: 0, bottom: 0 }}
-                  >
+                  <BarChart data={[...(isCSV ? activeData : DATA.repudiation ?? [])].reverse()} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10, fill: "#334155", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTip />} />
-                    {/* dataKey is always "rate" to match DATA.repudiation */}
-                    <Bar dataKey="rate" name="Repud. %" radius={[0, 4, 4, 0]} maxBarSize={14}>
-                      {[...DATA.repudiation].reverse().map((d: any, i: number) => (
-                        <Cell key={i} fill={d.rate > 3 ? "#f43f5e" : d.rate > 2 ? "#f59e0b" : "#22d3ee"} opacity={0.8} />
-                      ))}
+                    <Bar dataKey={isCSV ? "repud" : "rate"} name="Repud. %" radius={[0, 4, 4, 0]} maxBarSize={14}>
+                      {[...(isCSV ? activeData : DATA.repudiation ?? [])].reverse().map((d: any, i: number) => {
+                        const v = isCSV ? +d.repud : d.rate;
+                        return <Cell key={i} fill={v > 3 ? "#f43f5e" : v > 2 ? "#f59e0b" : "#22d3ee"} opacity={0.8} />;
+                      })}
                     </Bar>
                     <ReferenceLine x={2} stroke="rgba(244,63,94,0.3)" strokeDasharray="4 4" />
                   </BarChart>
@@ -481,14 +566,12 @@ export default function ConverSight() {
             </div>
           )}
 
-          {/* ── Trend ── */}
           {activeQuery === "trend" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(500px,1fr))", gap: 16 }}>
 
               <Panel title="Industry Settlement Ratio · 5-Year Trend" tag="AREA" delay={0}>
                 <ResponsiveContainer width="100%" height={280}>
-                  {/* Always reads from verified DATA.trend */}
-                  <AreaChart data={DATA.trend} margin={{ left: -10, right: 10, top: 4, bottom: 0 }}>
+                  <AreaChart data={isCSV ? activeData : DATA.trend} margin={{ left: -10, right: 10, top: 4, bottom: 0 }}>
                     <defs>
                       <linearGradient id="ratioGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.2} />
@@ -496,11 +579,9 @@ export default function ConverSight() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" />
-                    {/* dataKey is always "year" to match DATA.trend */}
-                    <XAxis dataKey="year" tick={{ fontSize: 10, fill: "#475569", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey={isCSV ? "name" : "year"} tick={{ fontSize: 10, fill: "#475569", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <YAxis domain={[94, 99]} tick={{ fontSize: 10, fill: "#334155", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTip />} />
-                    {/* dataKey is always "ratio" to match DATA.trend */}
                     <Area type="monotone" dataKey="ratio" name="Settlement %" stroke="#22d3ee" strokeWidth={2} fill="url(#ratioGrad)" dot={{ fill: "#22d3ee", r: 3 }} />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -508,35 +589,29 @@ export default function ConverSight() {
 
               <Panel title="Total Claims Filed · 5-Year Trend" tag="LINE" delay={0.1}>
                 <ResponsiveContainer width="100%" height={280}>
-                  {/* Always reads from verified DATA.trend */}
-                  <LineChart data={DATA.trend} margin={{ left: -10, right: 10, top: 4, bottom: 0 }}>
+                  <LineChart data={isCSV ? activeData : DATA.trend} margin={{ left: -10, right: 10, top: 4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" />
-                    {/* dataKey is always "year" to match DATA.trend */}
-                    <XAxis dataKey="year" tick={{ fontSize: 10, fill: "#475569", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey={isCSV ? "name" : "year"} tick={{ fontSize: 10, fill: "#475569", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: "#334155", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTip />} />
-                    {/* dataKey is always "claims" to match DATA.trend */}
-                    <Line type="monotone" dataKey="claims" name="Claims Filed" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: "#8b5cf6", r: 3 }} />
+                    <Line type="monotone" dataKey={isCSV ? "total" : "claims"} name="Claims Filed" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: "#8b5cf6", r: 3 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </Panel>
             </div>
           )}
 
-          {/* ── Repudiation Leaders ── */}
           {activeQuery === "repud" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(500px,1fr))", gap: 16 }}>
               <Panel title="Top Repudiation Rates · FY 2021-22" tag="BAR" delay={0}>
                 <ResponsiveContainer width="100%" height={320}>
-                  {/* Always reads from verified DATA.repudiation */}
-                  <BarChart data={DATA.repudiation} margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
+                  <BarChart data={isCSV ? activeData : DATA.repudiation} margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: "#334155", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTip />} />
-                    {/* dataKey is always "rate" to match DATA.repudiation */}
-                    <Bar dataKey="rate" name="Repud. %" radius={[4, 4, 0, 0]} maxBarSize={28}>
-                      {DATA.repudiation?.map((d: any, i: number) => (
+                    <Bar dataKey={isCSV ? "repud" : "rate"} name="Repud. %" radius={[4, 4, 0, 0]} maxBarSize={28}>
+                      {(isCSV ? activeData : DATA.repudiation)?.map((d: any, i: number) => (
                         <Cell key={i} fill={BAR_GRADIENT[i % BAR_GRADIENT.length]} opacity={0.85} />
                       ))}
                     </Bar>
@@ -547,20 +622,16 @@ export default function ConverSight() {
             </div>
           )}
 
-          {/* ── Volume vs Performance ── */}
           {activeQuery === "scatter" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(500px,1fr))", gap: 16 }}>
               <Panel title="Volume vs Settlement Performance · FY 2021-22" tag="SCATTER" delay={0}>
                 <ResponsiveContainer width="100%" height={320}>
-                  {/* Always reads from verified DATA.scatter */}
                   <ScatterChart margin={{ left: 10, right: 20, top: 10, bottom: 10 }}>
                     <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" />
-                    {/* dataKey is always "claims" to match DATA.scatter */}
-                    <XAxis dataKey="claims" name="Claims" tick={{ fontSize: 10, fill: "#475569", fontFamily: "monospace" }} axisLine={false} tickLine={false} label={{ value: "Claims Filed", position: "insideBottom", offset: -2, fill: "#334155", fontSize: 10 }} />
-                    {/* dataKey is always "ratio" to match DATA.scatter */}
+                    <XAxis dataKey={isCSV ? "total" : "claims"} name="Claims" tick={{ fontSize: 10, fill: "#475569", fontFamily: "monospace" }} axisLine={false} tickLine={false} label={{ value: "Claims Filed", position: "insideBottom", offset: -2, fill: "#334155", fontSize: 10 }} />
                     <YAxis dataKey="ratio" name="Settlement %" domain={[94, 100]} tick={{ fontSize: 10, fill: "#334155", fontFamily: "monospace" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTip />} cursor={{ strokeDasharray: "3 3" }} />
-                    <Scatter name="Insurers" data={DATA.scatter} fill="#22d3ee" opacity={0.7} />
+                    <Scatter name="Insurers" data={isCSV ? activeData : DATA.scatter} fill="#22d3ee" opacity={0.7} />
                   </ScatterChart>
                 </ResponsiveContainer>
               </Panel>
